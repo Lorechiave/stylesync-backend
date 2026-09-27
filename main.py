@@ -1,12 +1,13 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from rembg import remove
+# Importiamo new_session per usare il modello super leggero!
+from rembg import remove, new_session 
 import google.generativeai as genai
 import PIL.Image
 import io, uuid, json, os, hashlib
 
-app = FastAPI(title="StyleSync Pro")
+app = FastAPI(title="StyleSync Pro - Optimized")
 
 os.makedirs("immagini_armadio", exist_ok=True)
 app.mount("/immagini", StaticFiles(directory="immagini_armadio"), name="immagini")
@@ -14,7 +15,11 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 
 # INSERISCI LA TUA CHIAVE
 genai.configure(api_key="GEMINI_KEY") 
-model = genai.GenerativeModel('gemini-3.8-flash') # Modello più veloce
+model = genai.GenerativeModel('gemini-3.8-flash')
+
+# === IL TRUCCO PER NON FAR CRASHARE RENDER ===
+# Carichiamo il modello "u2netp" (Pocket). Pesa solo 4MB invece di 180MB!
+rembg_session = new_session("u2netp")
 
 DB_FILE = "database.json"
 
@@ -87,7 +92,8 @@ async def upload_clothes(file: UploadFile = File(...), username: str = Form(...)
     input_image = await file.read()
     
     try:
-        output_image = remove(input_image)
+        # Usiamo la sessione ultra-leggera qui!
+        output_image = remove(input_image, session=rembg_session)
     except:
         return {"error": "Errore rimozione sfondo."}
     
