@@ -19,7 +19,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 # ==========================================
 # CHIAVE GEMINI
 # ==========================================
-genai.configure(api_key="GEMINI KEY") # Inserisci la tua API Key
+genai.configure(api_key="GEMINI_KEY") # Inserisci la tua API Key
 model = genai.GenerativeModel('gemini-3.8-flash')
 
 database_utenti = {}
