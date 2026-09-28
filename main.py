@@ -94,33 +94,60 @@ async def add_armadio(username: str = Form(...), nome: str = Form(...)):
 @app.post("/upload-clothes/")
 async def upload_clothes(file: UploadFile = File(...), username: str = Form(...), nome_armadio: str = Form("Casa Principale")):
     user = username.strip().lower()
-    input_image = await file.read()
     
+    # 1. Leggiamo i dati grezzi dal telefono
+    raw_bytes = await file.read()
+    
+    # === TRUCCO SALVA-MEMORIA (ANTI-CRASH) ===
+    # Rimpiccioliamo brutalmente la foto PRIMA di darla in pasto all'AI
     try:
-        # Usiamo la sessione ultra-leggera qui!
-        output_image = remove(input_image, session=rembg_session)
+        img_originale = PIL.Image.open(io.BytesIO(raw_bytes))
+        # Se la foto è enorme, la riduciamo a un quadrato massimo di 600x600
+        img_originale.thumbnail((600, 600)) 
+        
+        compresso_io = io.BytesIO()
+        img_originale.save(compresso_io, format="PNG")
+        img_leggera = compresso_io.getvalue()
     except:
-        return {"error": "Errore rimozione sfondo."}
+        return {"error": "Impossibile leggere l'immagine inviata."}
+    # =========================================
+
+    # 2. Ora Rembg usa pochissima RAM perché lavora su una foto piccola!
+    try:
+        output_image = remove(img_leggera, session=rembg_session)
+    except:
+        return {"error": "Errore rimozione sfondo. Riprova."}
     
+    # 3. Salviamo l'immagine tagliata
     item_id = str(uuid.uuid4())[:8]
     filename = f"{item_id}.png"
-    with open(f"immagini_armadio/{filename}", "wb") as f: f.write(output_image)
+    with open(f"immagini_armadio/{filename}", "wb") as f: 
+        f.write(output_image)
         
-    img = PIL.Image.open(io.BytesIO(output_image))
+    # 4. Facciamo analizzare l'immagine a Gemini
+    img_per_gemini = PIL.Image.open(io.BytesIO(output_image))
     prompt = "Guarda questo capo. Rispondi SOLO in JSON con: 'nome' e 'colore'."
     try:
-        response = model.generate_content([prompt, img])
+        response = model.generate_content([prompt, img_per_gemini])
         dati_capo = json.loads(response.text.replace("```json", "").replace("```", "").strip())
     except:
         dati_capo = {"nome": "Capo", "colore": "Sconosciuto"}
         
-    capo = {"id": item_id, "nome": dati_capo.get("nome", "Capo"), "colore": dati_capo.get("colore", ""), "url_immagine": f"/immagini/{filename}"}
+    capo = {
+        "id": item_id, 
+        "nome": dati_capo.get("nome", "Capo"), 
+        "colore": dati_capo.get("colore", ""), 
+        "url_immagine": f"/immagini/{filename}"
+    }
     
-    if nome_armadio not in database_utenti[user]["armadi"]: database_utenti[user]["armadi"][nome_armadio] = []
+    # 5. Salviamo nel database
+    if nome_armadio not in database_utenti[user]["armadi"]: 
+        database_utenti[user]["armadi"][nome_armadio] = []
     database_utenti[user]["armadi"][nome_armadio].append(capo)
     salva_db()
     
-    return {"message": "Aggiunto!", "capo": capo}
+    return {"message": "Aggiunto con successo!", "capo": capo}
+
 
 @app.post("/move-item/")
 async def move_item(username: str = Form(...), item_id: str = Form(...), da_armadio: str = Form(...), a_armadio: str = Form(...)):
