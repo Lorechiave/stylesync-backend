@@ -9,6 +9,11 @@ import io, uuid, json, os, hashlib
 
 app = FastAPI(title="StyleSync Pro - Optimized")
 
+@app.get("/")
+async def sveglia():
+    return {"status": "Sono sveglio e operativo h24!"}
+
+
 os.makedirs("immagini_armadio", exist_ok=True)
 app.mount("/immagini", StaticFiles(directory="immagini_armadio"), name="immagini")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
