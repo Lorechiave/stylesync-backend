@@ -214,24 +214,41 @@ async def generate_outfits(username: str, aesthetic: str = "Y2K", nome_armadio: 
     
     armadio_scelto = [c for c in lista_capi if isinstance(c, dict) and (c.get("stato", "disponibile") == "disponibile" or c.get("id") == capo_forzato_id)]
     
-    if len(armadio_scelto) < 2: return {"error": "Pochi capi disponibili per creare un outfit."}
+    if len(armadio_scelto) < 2: return {"error": "Pochi capi disponibili per creare un outfit (ne servono almeno 2)."}
     
     capi_per_prompt = [{"id": c["id"], "nome": c.get("nome"), "colore": c.get("colore")} for c in armadio_scelto]
+    
+    # Prompt super-restrittivo con schema visivo
     prompt = f"Crea 3 outfit stile {aesthetic} usando SOLO questi capi: {json.dumps(capi_per_prompt)}. "
     if capo_forzato_id: prompt += f"DEVI assolutamente includere il capo con ID {capo_forzato_id} in tutti gli outfit. "
-    prompt += "Rispondi in JSON puro con lista 'outfits' ('titolo' e 'capi_ids')."
+    prompt += """Devi rispondere ESATTAMENTE E SOLO con questo formato JSON, senza nessuna parola prima o dopo:
+    {
+      "outfits": [
+        {
+          "titolo": "Nome dell'outfit",
+          "capi_ids": ["id_1", "id_2"]
+        }
+      ]
+    }"""
     
     try:
         response = model.generate_content(prompt)
         testo = response.text.strip()
+        
+        # Pulizia del testo per estrarre solo il JSON
         if "```json" in testo: testo = testo.split("```json")[1].split("```")[0].strip()
         elif "```" in testo: testo = testo.split("```")[1].split("```")[0].strip()
-        
+        elif testo.startswith("{") == False: 
+            # Se Gemini ha aggiunto chiacchiere all'inizio, cerchiamo la prima parentesi graffa
+            testo = testo[testo.find("{"):]
+            
         outfits_dati = json.loads(testo)
         risultato = [{"titolo": out["titolo"], "capi": [c for c in armadio_scelto if c["id"] in out["capi_ids"]]} for out in outfits_dati["outfits"]]
         return {"outfits": risultato}
-    except Exception: 
-        return {"error": "Errore AI durante la generazione outfit."}
+    except Exception as e: 
+        # Ora la Spia ci dirà esattamente cosa è andato storto!
+        errore_dettagliato = f"Errore Python: {str(e)}"
+        return {"error": errore_dettagliato}
 
 @app.get("/")
 async def sveglia(): return {"status": "Online h24!"}
