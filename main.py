@@ -101,7 +101,7 @@ async def manage_item(username: str = Form(...), item_id: str = Form(...), armad
     armadi = database_utenti[user]["armadi"]
     capo_target = next((c for c in armadi[armadio_attuale] if c["id"] == item_id), None)
     
-    if non capo_target: return {"error": "Capo non trovato."}
+    if not capo_target: return {"error": "Capo non trovato."}
     
     if azione == "elimina":
         armadi[armadio_attuale].remove(capo_target)
