@@ -11,7 +11,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 # ==========================================
 genai.configure(api_key="GEMINI_KEY") 
 model = genai.GenerativeModel('gemini-3.8-flash')
-FIREBASE_URL = "FIREBASE_URL" # Assicurati di non mettere la barra / alla fine!
+FIREBASE_URL = "FIREBASE_KEY" # Assicurati di non mettere la barra / alla fine!
 # ==========================================
 
 def carica_db():
