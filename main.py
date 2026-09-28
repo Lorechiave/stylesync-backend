@@ -214,19 +214,29 @@ async def generate_outfits(username: str, aesthetic: str = "Y2K", nome_armadio: 
     
     armadio_scelto = [c for c in lista_capi if isinstance(c, dict) and (c.get("stato", "disponibile") == "disponibile" or c.get("id") == capo_forzato_id)]
     
-    if len(armadio_scelto) < 2: return {"error": "Pochi capi disponibili per creare un outfit (ne servono almeno 2)."}
+    if len(armadio_scelto) < 2: return {"error": "Pochi capi disponibili per creare un outfit."}
     
     capi_per_prompt = [{"id": c["id"], "nome": c.get("nome"), "colore": c.get("colore")} for c in armadio_scelto]
     
-    # Prompt super-restrittivo con schema visivo
+    # Prompt da vero Stylist con Regole ferree
     prompt = f"Crea 3 outfit stile {aesthetic} usando SOLO questi capi: {json.dumps(capi_per_prompt)}. "
     if capo_forzato_id: prompt += f"DEVI assolutamente includere il capo con ID {capo_forzato_id} in tutti gli outfit. "
-    prompt += """Devi rispondere ESATTAMENTE E SOLO con questo formato JSON, senza nessuna parola prima o dopo:
+    
+    prompt += """
+    REGOLE FONDAMENTALI DI STILE (PENA IL FALLIMENTO):
+    1. Ogni outfit DEVE essere indossabile nel mondo reale e avere perfettamente senso logico.
+    2. DEVE sempre esserci almeno una parte inferiore (pantaloni, jeans, gonna, shorts) e almeno una parte superiore (maglietta, camicia, top).
+    3. ASSOLUTAMENTE VIETATO mettere due capi inferiori nello stesso outfit (es. mai due pantaloni).
+    4. ASSOLUTAMENTE VIETATO mettere due capi superiori in conflitto (es. mai due camicie o due magliette a maniche corte insieme).
+    5. È consentito il layering (vestirsi a strati) solo se ha senso: es. Maglietta SOTTO a una Felpa, Giacca o Camicia aperta.
+    6. Se disponibili nell'elenco, includi sempre scarpe sensate e accessori (cinture, orologi, ecc.) per completare il look.
+    
+    Devi rispondere ESATTAMENTE E SOLO con questo formato JSON, senza nessuna parola prima o dopo:
     {
       "outfits": [
         {
-          "titolo": "Nome dell'outfit",
-          "capi_ids": ["id_1", "id_2"]
+          "titolo": "Nome creativo dell'outfit",
+          "capi_ids": ["id_1", "id_2", "id_3"]
         }
       ]
     }"""
@@ -235,20 +245,16 @@ async def generate_outfits(username: str, aesthetic: str = "Y2K", nome_armadio: 
         response = model.generate_content(prompt)
         testo = response.text.strip()
         
-        # Pulizia del testo per estrarre solo il JSON
         if "```json" in testo: testo = testo.split("```json")[1].split("```")[0].strip()
         elif "```" in testo: testo = testo.split("```")[1].split("```")[0].strip()
         elif testo.startswith("{") == False: 
-            # Se Gemini ha aggiunto chiacchiere all'inizio, cerchiamo la prima parentesi graffa
             testo = testo[testo.find("{"):]
             
         outfits_dati = json.loads(testo)
         risultato = [{"titolo": out["titolo"], "capi": [c for c in armadio_scelto if c["id"] in out["capi_ids"]]} for out in outfits_dati["outfits"]]
         return {"outfits": risultato}
     except Exception as e: 
-        # Ora la Spia ci dirà esattamente cosa è andato storto!
-        errore_dettagliato = f"Errore Python: {str(e)}"
-        return {"error": errore_dettagliato}
+        return {"error": f"Errore AI: {str(e)}"}
 
 @app.get("/")
 async def sveglia(): return {"status": "Online h24!"}
