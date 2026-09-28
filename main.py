@@ -1,57 +1,36 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-# Importiamo new_session per usare il modello super leggero!
+from fastapi.responses import Response
 import google.generativeai as genai
 import PIL.Image
-import io, uuid, json, os, hashlib
+import io, uuid, json, os, hashlib, requests, base64
 
-app = FastAPI(title="StyleSync Pro - Optimized")
-
-@app.get("/")
-async def sveglia():
-    return {"status": "Sono sveglio e operativo h24!"}
-
-
-os.makedirs("immagini_armadio", exist_ok=True)
-app.mount("/immagini", StaticFiles(directory="immagini_armadio"), name="immagini")
+app = FastAPI(title="StyleSync Pro")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-# INSERISCI LA TUA CHIAVE
+# ==========================================
 genai.configure(api_key="GEMINI_KEY") 
 model = genai.GenerativeModel('gemini-3.8-flash')
-
-# === IL TRUCCO PER NON FAR CRASHARE RENDER ===
-# Carichiamo il modello "u2netp" (Pocket). Pesa solo 4MB invece di 180MB!
-
-DB_FILE = "database.json"
+FIREBASE_URL = "FIREBASE_URL" # Assicurati di non mettere la barra / alla fine!
+# ==========================================
 
 def carica_db():
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, "r") as f: return json.load(f)
-        except: return {}
-    return {}
+    try:
+        r = requests.get(f"{FIREBASE_URL}/utenti.json")
+        return r.json() if r.json() else {}
+    except: return {}
 
 def salva_db():
-    with open(DB_FILE, "w") as f: json.dump(database_utenti, f, indent=4)
+    requests.put(f"{FIREBASE_URL}/utenti.json", json=database_utenti)
 
 database_utenti = carica_db()
 def cripta_password(password: str) -> str: return hashlib.sha256(password.encode()).hexdigest()
 
-# === SISTEMA DI AUTENTICAZIONE COMPLETO ===
 @app.post("/register/")
 async def register(username: str = Form(...), password: str = Form(...), domanda: str = Form(...), risposta: str = Form(...)):
     user = username.strip().lower()
-    if user in database_utenti:
-        return {"error": "Username già in uso. Scegline un altro."}
-    
-    database_utenti[user] = {
-        "password": cripta_password(password),
-        "domanda": domanda,
-        "risposta": risposta.strip().lower(),
-        "armadi": {"Casa Principale": []}
-    }
+    if user in database_utenti: return {"error": "Username già in uso."}
+    database_utenti[user] = {"password": cripta_password(password), "domanda": domanda, "risposta": risposta.strip().lower(), "armadi": {"Casa Principale": []}}
     salva_db()
     return {"message": "Registrazione completata!"}
 
@@ -59,21 +38,9 @@ async def register(username: str = Form(...), password: str = Form(...), domanda
 async def login(username: str = Form(...), password: str = Form(...)):
     user = username.strip().lower()
     if user not in database_utenti: return {"error": "Utente non trovato."}
-    if database_utenti[user]["password"] == cripta_password(password):
-        return {"message": "Accesso consentito"}
+    if database_utenti[user]["password"] == cripta_password(password): return {"message": "Accesso consentito"}
     return {"error": "Password errata."}
 
-@app.post("/recover-password/")
-async def recover(username: str = Form(...), risposta: str = Form(...), nuova_password: str = Form(...)):
-    user = username.strip().lower()
-    if user not in database_utenti: return {"error": "Utente non trovato."}
-    if database_utenti[user].get("risposta", "") == risposta.strip().lower():
-        database_utenti[user]["password"] = cripta_password(nuova_password)
-        salva_db()
-        return {"message": "Password aggiornata con successo!"}
-    return {"error": "Risposta di sicurezza errata."}
-
-# === GESTIONE ARMADI E OUTFIT ===
 @app.get("/get-armadi/")
 async def get_armadi(username: str):
     user = username.strip().lower()
@@ -82,82 +49,93 @@ async def get_armadi(username: str):
 @app.post("/add-armadio/")
 async def add_armadio(username: str = Form(...), nome: str = Form(...)):
     user = username.strip().lower()
-    if user in database_utenti:
-        if nome not in database_utenti[user]["armadi"]:
-            database_utenti[user]["armadi"][nome] = []
-            salva_db()
-        return {"message": "Armadio creato!", "nomi_armadi": list(database_utenti[user]["armadi"].keys())}
-    return {"error": "Utente non valido."}
+    if user in database_utenti and nome not in database_utenti[user]["armadi"]:
+        database_utenti[user]["armadi"][nome] = []
+        salva_db()
+    return {"message": "Armadio creato!"}
 
 @app.post("/upload-clothes/")
 async def upload_clothes(file: UploadFile = File(...), username: str = Form(...), nome_armadio: str = Form("Casa Principale")):
     user = username.strip().lower()
     raw_bytes = await file.read()
     
-    # 1. Rimpiccioliamo l'immagine e la salviamo DIRETTAMENTE (Senza togliere lo sfondo)
     try:
         img_originale = PIL.Image.open(io.BytesIO(raw_bytes))
         img_originale.thumbnail((600, 600)) 
         compresso_io = io.BytesIO()
         img_originale.save(compresso_io, format="PNG")
         output_image = compresso_io.getvalue()
-    except:
-        return {"error": "Impossibile leggere l'immagine inviata."}
+        img_base64 = base64.b64encode(output_image).decode('utf-8')
+    except: return {"error": "Impossibile leggere l'immagine."}
     
-    # 2. Salviamo l'immagine sul server
     item_id = str(uuid.uuid4())[:8]
-    filename = f"{item_id}.png"
-    with open(f"immagini_armadio/{filename}", "wb") as f: 
-        f.write(output_image)
-        
-    # 3. Chiediamo a Google Gemini di riconoscere il vestito
     img_per_gemini = PIL.Image.open(io.BytesIO(output_image))
-    prompt = "Guarda questo capo. Rispondi SOLO in JSON con due chiavi: 'nome' (es. Maglione) e 'colore' (es. Rosso)."
-    try:
-        response = model.generate_content([prompt, img_per_gemini])
-        dati_capo = json.loads(response.text.replace("```json", "").replace("```", "").strip())
-    except:
-        dati_capo = {"nome": "Capo", "colore": "Sconosciuto"}
-        
-    capo = {
-        "id": item_id, 
-        "nome": dati_capo.get("nome", "Capo"), 
-        "colore": dati_capo.get("colore", ""), 
-        "url_immagine": f"/immagini/{filename}"
-    }
     
-    # 4. Salviamo nel database utente
-    if nome_armadio not in database_utenti[user]["armadi"]: 
-        database_utenti[user]["armadi"][nome_armadio] = []
+    prompt = "Identify this clothing item. Reply ONLY with a raw JSON object containing two keys: 'nome' (e.g. Jeans, Camicia) and 'colore' (e.g. Rosso, Nero)."
+    try:
+        # Costringiamo Gemini a usare il formato JSON per evitare fallimenti
+        response = model.generate_content([prompt, img_per_gemini], generation_config={"response_mime_type": "application/json"})
+        dati_capo = json.loads(response.text)
+    except: dati_capo = {"nome": "Capo", "colore": "Sconosciuto"}
+        
+    capo = {"id": item_id, "nome": dati_capo.get("nome", "Capo"), "colore": dati_capo.get("colore", ""), "stato": "disponibile", "base64": img_base64, "url_immagine": f"/immagini/{item_id}.png"}
+    
+    if nome_armadio not in database_utenti[user]["armadi"]: database_utenti[user]["armadi"][nome_armadio] = []
     database_utenti[user]["armadi"][nome_armadio].append(capo)
     salva_db()
-    
-    return {"message": "Aggiunto con successo!", "capo": capo}
+    return {"message": "Aggiunto!", "capo": capo}
 
+@app.get("/immagini/{filename}")
+async def get_image(filename: str):
+    item_id = filename.replace(".png", "")
+    for user_data in database_utenti.values():
+        for armadio in user_data.get("armadi", {}).values():
+            for capo in armadio:
+                if capo.get("id") == item_id and "base64" in capo:
+                    return Response(content=base64.b64decode(capo["base64"]), media_type="image/png")
+    return Response(status_code=404)
 
-@app.post("/move-item/")
-async def move_item(username: str = Form(...), item_id: str = Form(...), da_armadio: str = Form(...), a_armadio: str = Form(...)):
+@app.post("/manage-item/")
+async def manage_item(username: str = Form(...), item_id: str = Form(...), armadio_attuale: str = Form(...), azione: str = Form(...), nuovo_valore: str = Form(None)):
     user = username.strip().lower()
     armadi = database_utenti[user]["armadi"]
-    capo_da_spostare = next((c for c in armadi[da_armadio] if c["id"] == item_id), None)
-    if capo_da_spostare:
-        armadi[da_armadio].remove(capo_da_spostare)
-        armadi[a_armadio].append(capo_da_spostare)
-        salva_db()
-        return {"message": "Spostamento completato!"}
-    return {"error": "Errore spostamento."}
+    capo_target = next((c for c in armadi[armadio_attuale] if c["id"] == item_id), None)
+    
+    if non capo_target: return {"error": "Capo non trovato."}
+    
+    if azione == "elimina":
+        armadi[armadio_attuale].remove(capo_target)
+    elif azione == "rinomina":
+        capo_target["nome"] = nuovo_valore
+    elif azione == "lavanderia":
+        capo_target["stato"] = "lavare" if capo_target.get("stato") == "disponibile" else "disponibile"
+    elif azione == "sposta":
+        armadi[armadio_attuale].remove(capo_target)
+        armadi[nuovo_valore].append(capo_target)
+        
+    salva_db()
+    return {"message": "Azione completata!"}
 
 @app.get("/generate-outfits/")
-async def generate_outfits(username: str, aesthetic: str = "Y2K", nome_armadio: str = "Casa Principale"):
+async def generate_outfits(username: str, aesthetic: str = "Y2K", nome_armadio: str = "Casa Principale", capo_forzato_id: str = None):
     user = username.strip().lower()
-    armadio_scelto = database_utenti[user]["armadi"].get(nome_armadio, [])
-    if len(armadio_scelto) < 2: return {"error": f"Carica almeno 2 capi in '{nome_armadio}'!"}
-        
-    prompt = f"Sei uno stilista. Crea 3 outfit stile {aesthetic} usando SOLO questi capi: {json.dumps(armadio_scelto)}. Rispondi in JSON con lista 'outfits' ('titolo' e 'capi_ids')."
+    armadio_completo = database_utenti[user]["armadi"].get(nome_armadio, [])
+    
+    # Escludiamo i capi a lavare, a meno che non sia il capo forzato dall'utente
+    armadio_scelto = [c for c in armadio_completo if c.get("stato", "disponibile") == "disponibile" or c["id"] == capo_forzato_id]
+    
+    if len(armadio_scelto) < 2: return {"error": "Pochi capi disponibili per creare un outfit."}
+    
+    prompt = f"Crea 3 outfit stile {aesthetic} usando SOLO questi capi: {json.dumps(armadio_scelto)}. "
+    if capo_forzato_id: prompt += f"DEVI assolutamente includere il capo con ID {capo_forzato_id} in tutti gli outfit. "
+    prompt += "Rispondi in JSON puro con lista 'outfits' ('titolo' e 'capi_ids')."
+    
     try:
-        response = model.generate_content(prompt)
-        outfits_dati = json.loads(response.text.replace("```json", "").replace("```", "").strip())
+        response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
+        outfits_dati = json.loads(response.text)
         risultato = [{"titolo": out["titolo"], "capi": [c for c in armadio_scelto if c["id"] in out["capi_ids"]]} for out in outfits_dati["outfits"]]
         return {"outfits": risultato}
-    except:
-        return {"error": "Errore nella generazione AI. Riprova."}
+    except: return {"error": "Errore AI."}
+
+@app.get("/")
+async def sveglia(): return {"status": "Online h24!"}
