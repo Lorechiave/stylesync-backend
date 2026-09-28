@@ -18,14 +18,18 @@ def get_user(username):
     try:
         r = requests.get(f"{FIREBASE_URL}/utenti/{username}.json")
         if r.status_code == 200 and r.json(): return r.json()
-    except: pass
+    except Exception as e:
+        print(f"Errore lettura: {e}")
     return None
 
 def save_user(username, data):
     try:
-        requests.put(f"{FIREBASE_URL}/utenti/{username}.json", json=data)
-        return True
-    except: return False
+        r = requests.put(f"{FIREBASE_URL}/utenti/{username}.json", json=data)
+        if r.status_code != 200:
+            return f"Rifiutato da Firebase: {r.text}"
+        return "OK"
+    except Exception as e: 
+        return f"Errore Python: {str(e)}"
 
 def cripta_password(password: str) -> str: return hashlib.sha256(password.encode()).hexdigest()
 
@@ -39,8 +43,14 @@ async def register(username: str = Form(...), password: str = Form(...), domanda
         "risposta": risposta.strip().lower(), 
         "armadi": {"Casa Principale": []}
     }
-    if save_user(user, nuovo_utente): return {"message": "Registrazione completata!"}
-    return {"error": "Errore server Firebase."}
+    
+    # === TRUCCO SPIA ===
+    risultato = save_user(user, nuovo_utente)
+    if risultato == "OK": 
+        return {"message": "Registrazione completata!"}
+    
+    # Se fallisce, invia l'errore tecnico direttamente all'app
+    return {"error": risultato}
 
 @app.post("/login/")
 async def login(username: str = Form(...), password: str = Form(...)):
