@@ -1,6 +1,5 @@
 fastapi
 uvicorn
 python-multipart
-rembg[cpu]
 google-generativeai
 pillow
