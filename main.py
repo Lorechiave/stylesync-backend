@@ -94,39 +94,27 @@ async def add_armadio(username: str = Form(...), nome: str = Form(...)):
 @app.post("/upload-clothes/")
 async def upload_clothes(file: UploadFile = File(...), username: str = Form(...), nome_armadio: str = Form("Casa Principale")):
     user = username.strip().lower()
-    
-    # 1. Leggiamo i dati grezzi dal telefono
     raw_bytes = await file.read()
     
-    # === TRUCCO SALVA-MEMORIA (ANTI-CRASH) ===
-    # Rimpiccioliamo brutalmente la foto PRIMA di darla in pasto all'AI
+    # 1. Rimpiccioliamo l'immagine e la salviamo DIRETTAMENTE (Senza togliere lo sfondo)
     try:
         img_originale = PIL.Image.open(io.BytesIO(raw_bytes))
-        # Se la foto è enorme, la riduciamo a un quadrato massimo di 600x600
         img_originale.thumbnail((600, 600)) 
-        
         compresso_io = io.BytesIO()
         img_originale.save(compresso_io, format="PNG")
-        img_leggera = compresso_io.getvalue()
+        output_image = compresso_io.getvalue()
     except:
         return {"error": "Impossibile leggere l'immagine inviata."}
-    # =========================================
-
-    # 2. Ora Rembg usa pochissima RAM perché lavora su una foto piccola!
-    try:
-        output_image = remove(img_leggera, session=rembg_session)
-    except:
-        return {"error": "Errore rimozione sfondo. Riprova."}
     
-    # 3. Salviamo l'immagine tagliata
+    # 2. Salviamo l'immagine sul server
     item_id = str(uuid.uuid4())[:8]
     filename = f"{item_id}.png"
     with open(f"immagini_armadio/{filename}", "wb") as f: 
         f.write(output_image)
         
-    # 4. Facciamo analizzare l'immagine a Gemini
+    # 3. Chiediamo a Google Gemini di riconoscere il vestito
     img_per_gemini = PIL.Image.open(io.BytesIO(output_image))
-    prompt = "Guarda questo capo. Rispondi SOLO in JSON con: 'nome' e 'colore'."
+    prompt = "Guarda questo capo. Rispondi SOLO in JSON con due chiavi: 'nome' (es. Maglione) e 'colore' (es. Rosso)."
     try:
         response = model.generate_content([prompt, img_per_gemini])
         dati_capo = json.loads(response.text.replace("```json", "").replace("```", "").strip())
@@ -140,7 +128,7 @@ async def upload_clothes(file: UploadFile = File(...), username: str = Form(...)
         "url_immagine": f"/immagini/{filename}"
     }
     
-    # 5. Salviamo nel database
+    # 4. Salviamo nel database utente
     if nome_armadio not in database_utenti[user]["armadi"]: 
         database_utenti[user]["armadi"][nome_armadio] = []
     database_utenti[user]["armadi"][nome_armadio].append(capo)
