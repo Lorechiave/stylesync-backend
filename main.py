@@ -218,25 +218,26 @@ async def generate_outfits(username: str, aesthetic: str = "Y2K", nome_armadio: 
     
     capi_per_prompt = [{"id": c["id"], "nome": c.get("nome"), "colore": c.get("colore")} for c in armadio_scelto]
     
-    # Prompt da vero Stylist con Regole ferree
-    prompt = f"Crea 3 outfit stile {aesthetic} usando SOLO questi capi: {json.dumps(capi_per_prompt)}. "
-    if capo_forzato_id: prompt += f"DEVI assolutamente includere il capo con ID {capo_forzato_id} in tutti gli outfit. "
+    # PROMPT BLINDATO "STILE DITTATORE"
+    prompt = f"""Sei uno Stylist professionista. Devi creare fino a 3 outfit in stile '{aesthetic}' usando ESCLUSIVAMENTE questo guardaroba: {json.dumps(capi_per_prompt)}. """
+    
+    if capo_forzato_id: 
+        prompt += f"\nATTENZIONE: Il capo con ID '{capo_forzato_id}' DEVE essere presente in ogni singolo outfit generato, è il capo centrale!\n"
     
     prompt += """
-    REGOLE FONDAMENTALI DI STILE (PENA IL FALLIMENTO):
-    1. Ogni outfit DEVE essere indossabile nel mondo reale e avere perfettamente senso logico.
-    2. DEVE sempre esserci almeno una parte inferiore (pantaloni, jeans, gonna, shorts) e almeno una parte superiore (maglietta, camicia, top).
-    3. ASSOLUTAMENTE VIETATO mettere due capi inferiori nello stesso outfit (es. mai due pantaloni).
-    4. ASSOLUTAMENTE VIETATO mettere due capi superiori in conflitto (es. mai due camicie o due magliette a maniche corte insieme).
-    5. È consentito il layering (vestirsi a strati) solo se ha senso: es. Maglietta SOTTO a una Felpa, Giacca o Camicia aperta.
-    6. Se disponibili nell'elenco, includi sempre scarpe sensate e accessori (cinture, orologi, ecc.) per completare il look.
-    
-    Devi rispondere ESATTAMENTE E SOLO con questo formato JSON, senza nessuna parola prima o dopo:
+    REGOLE TASSATIVE:
+    1. OGNI SINGOLO OUTFIT DEVE AVERE OBBLIGATORIAMENTE UN PEZZO SOTTO (pantalone, jeans, gonna, shorts). È severamente vietato creare outfit senza pantaloni/pezzi sotto.
+    2. OGNI SINGOLO OUTFIT DEVE AVERE OBBLIGATORIAMENTE UN PEZZO SOPRA (maglia, camicia, felpa).
+    3. DIVIETO ASSOLUTO: Non puoi MAI mettere due pezzi sopra dello stesso tipo (es. vietato mettere due camicie insieme).
+    4. PUOI RIUTILIZZARE I CAPI: È assolutamente permesso (e consigliato) usare lo stesso pantalone in più outfit diversi, cambiandogli solo la camicia o la maglietta.
+    5. SE NON RIESCI: Se non hai combinazioni sensate per fare 3 outfit diversi, fanne solo 1 o 2 perfetti. Non inventare abbinamenti senza senso pur di arrivare a 3.
+
+    Rispondi ESATTAMENTE E SOLO con questo formato JSON puro:
     {
       "outfits": [
         {
-          "titolo": "Nome creativo dell'outfit",
-          "capi_ids": ["id_1", "id_2", "id_3"]
+          "titolo": "Nome Outfit",
+          "capi_ids": ["id_1", "id_2"]
         }
       ]
     }"""
