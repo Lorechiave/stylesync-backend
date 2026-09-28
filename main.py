@@ -17,7 +17,7 @@ app.add_middleware(
 CHIAVE_GEMINI = os.getenv("GEMINI_KEY")
 if CHIAVE_GEMINI:
     genai.configure(api_key=CHIAVE_GEMINI) 
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-3.8-flash')
 
 FIREBASE_URL = os.getenv("FIREBASE_KEY")
 
